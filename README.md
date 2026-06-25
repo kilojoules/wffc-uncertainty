@@ -9,6 +9,44 @@ experiment with a counterintuitive result:
 > because the universally-used bootstrap confidence interval shrinks toward zero
 > while a systematic (GUM Type B) measurement error stays fixed and unseen.
 
+## Read this first: benefit, the two errors, and the "true" value
+
+**What "benefit" means.** The benefit is the extra wind-farm power with wake
+steering ON versus OFF, *after controlling for the wind*. For each 1 m/s wind-speed
+bin we average the turbine-pair power during ON periods and during OFF periods, take
+the difference, and combine bins weighted by how often each occurs:
+
+```
+benefit  =  Σ_i w_i · ( mean P_on,i − mean P_off,i )  /  Σ_i w_i
+```
+
+(sum over wind-speed bins i; w_i = number of samples in bin i). We report it either
+in **kW** (absolute) or as a **percent of the baseline OFF power** — a 1–3 % uplift
+is typical. The percent is divided by the **baseline power**, *not* by the true
+benefit.
+
+**The two synthetic measurement errors.** The wake model is deterministic, so the
+true ON and OFF power at every 10-min step is known exactly. We then corrupt what
+the analyst *records*, the way real instruments do:
+
+- **Type A — random, reducible.** Every logged power is multiplied by `(1 + ε)`,
+  with `ε ~ N(0, 2%)` drawn fresh each sample. Plain sensor noise: it averages out
+  with more data, and it is exactly what the bootstrap captures.
+- **Type B — systematic, irreducible.** During ON (yawed) periods the logged power
+  carries a *fixed* unknown gain offset `(1 + b)`, with `b ~ N(0, σ_B)` drawn
+  **once per campaign** and identical at every timestep — a stand-in for an
+  uncorrected yaw-dependent metering / transfer-function error (an IEA Task 44
+  source). Because it is the same at every step, no amount of averaging or
+  resampling removes it, and the bootstrap never sees it. (σ_B is the knob we sweep;
+  0.25–0.5 % is "mild".)
+
+**The "true benefit" is a check-target, not a normalizer.** Because the model is
+deterministic we compute the true benefit once from the *clean* (error-free) power.
+It is used only to ask *"did the reported interval contain it?"* — it never divides
+or rescales anything. The percent benefit is `gain ÷ baseline power`; the absolute
+(kW) view tells the identical story with no percent at all, so the normalization is
+cosmetic, not load-bearing.
+
 ## The story in four figures
 
 **1 · What a toggle test records.** The controller is switched ON/OFF every ~70 min;
@@ -17,11 +55,13 @@ not the control — the benefit is nowhere to be seen in the raw signal.
 
 ![raw data](story_1_rawdata.png)
 
-**2 · How the benefit is computed.** Bin the data by wind speed, average ON vs OFF
-in each bin, take the difference, and occurrence-weight it into one number. The
-ON/OFF clouds almost completely overlap; the per-bin gains are small and
-sign-varying; the aggregate here reads **+2.44 %** (the true value is **+1.69 %** —
-the gap is a systematic measurement bias).
+**2 · How the benefit is computed.** Bin by wind speed, average ON vs OFF in each
+bin, difference, occurrence-weight into one number (the formula above). The ON/OFF
+clouds almost completely overlap; the per-bin gains are small and sign-varying. This
+campaign reads **+2.44 % of baseline power**, while the known true value is
+**+1.69 %** — the +0.75-point gap is the systematic Type-B bias (this campaign drew
+a ≈ +1σ offset). A bootstrap of this data can only "see" the random scatter, not
+that offset.
 
 ![binning and power gain](story_2_binning.png)
 
@@ -32,28 +72,23 @@ more data cannot reduce. The bootstrap reports only Type A.
 
 ![two uncertainties](story_3_uncertainty.png)
 
-**4 · The consequence.** Coverage of the *true* benefit by the reported 95 %
-interval. With no Type B the bootstrap is fine; with even a mild systematic its
-coverage **falls as the campaign grows** (it tightens around a biased value),
-while the honest interval (bootstrap ⊕ propagated Type B) holds ~95 %.
+**4 · The consequence.** How often the reported 95 % interval actually contains the
+known true benefit (the clean-model value from "read this first"). With no Type B
+the bootstrap is fine; with even a mild systematic its coverage **falls as the
+campaign grows** (it tightens around a biased value), while the honest interval
+(bootstrap ⊕ propagated Type B) holds ~95 %.
 
 ![conclusion](story_4_conclusion.png)
 
 ## Why this happens
 
-A toggle test measures the benefit directly; its reported uncertainty is almost
-always a block-bootstrap CI. But uncertainty comes in two kinds (GUM):
-
-- **Type A** — statistical (sensor noise, finite samples). The bootstrap estimates
-  it, and it **shrinks ∝ 1/√N**.
-- **Type B** — systematic (calibration offsets, yaw-dependent transfer functions,
-  wake-model form). It **does not shrink with more measurement**, and the bootstrap
-  — which resamples the *observed* data — is **structurally blind to it**.
-
-So as the campaign grows, the bootstrap CI tightens toward **zero width around a
-point that still carries the fixed Type-B bias.** A tighter interval around a
-biased estimate excludes the truth *more* often. More data buys precision about the
-wrong number — and the best-funded studies are the most confidently wrong.
+The bootstrap estimates only Type A, so as the campaign grows its CI tightens
+∝ 1/√N toward **zero width around a point that still carries the fixed Type-B
+bias.** A tighter interval around a biased estimate excludes the truth *more* often.
+More data buys precision about the wrong number — and the best-funded studies are
+the most confidently wrong. (Type B is irreducible by construction: the systematic
+offset is identical at every timestep, so neither averaging nor resampling the data
+can reveal it.)
 
 ## The experiment
 
@@ -62,11 +97,11 @@ wrong number — and the best-funded studies are the most confidently wrong.
   coefficient, so the true benefit is known exactly — no hidden parameter games.
   One year of real 10-min inflow, aligned waked sector (266–274°); each campaign
   draws its own weather by 2-day block resampling, extended to 8 years.
-- **Synthetic measurement errors** are added to what the analyst sees (as GUM /
-  [Quick et al. 2025](https://doi.org/10.1016/j.renene.2024.122028) prescribe):
-  **Type A** = random per-sample power noise (2 %); **Type B** = a systematic,
-  yaw-correlated bias `b ~ N(0, σ_B)` drawn once per campaign (constant ⇒ invisible
-  to resampling ⇒ irreducible).
+- **Synthetic measurement errors** (Type A random 2 %, Type B systematic σ_B once
+  per campaign) are added to the clean power as defined in *Read this first*,
+  following GUM / [Quick et al. 2025](https://doi.org/10.1016/j.renene.2024.122028).
+- **Reported uncertainty** is the standard block-bootstrap 95 % CI (Type A); the
+  "honest" interval adds the propagated Type B in quadrature.
 
 ## Sharper cut: the go/no-go decision under *mild* Type B
 
