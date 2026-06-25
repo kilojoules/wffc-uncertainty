@@ -79,6 +79,50 @@ fix it?
 
 ![bootstrap vs Type-B floor, single level](fig_typeB_measurement.png)
 
+## Un-normalized (absolute) view
+
+Reporting the benefit as a percent of baseline power collapses everything into one
+number and hides structure. In absolute units (`absolute_view.py`):
+
+![absolute kW view](fig_absolute_view.png)
+
+- The net benefit (here **−15 kW**, ≈ −4 MWh/yr over the waked sector) is a
+  **delicate cancellation** of large, sign-flipping per-wind-speed contributions
+  (+60 kW in Region II, −125 kW near the rated transition where the yaw still
+  costs power but the downstream turbine is already near rated). The aggregate is
+  therefore sensitive to how the wind-speed bins are weighted — the percent number
+  hides this entirely.
+- The **systematic Type-B error grows with power** (`b·P_on`): tiny in low winds,
+  ±40–50 kW near rated — i.e. largest in exactly the high-wind bins where the wake
+  effect and the real benefit have vanished. A yaw-correlated metering bias thus
+  contaminates the aggregate mainly through high-power, zero-benefit bins.
+- The **raw campaign-to-campaign spread** of the estimate (grey histogram) is
+  ~2× wider than a single campaign's bootstrap CI (blue) and off-centre from the
+  truth — the same overconfidence as the normalized analysis, shown without any
+  normalization.
+
+## Different conclusions under *mild* Type B (`mild_typeB_decision.py`)
+
+The field decision is binary: does the 95 % interval exclude zero — *"WFFC gives a
+statistically significant benefit, deploy / publish"*? Set the true benefit to ≈0
+(a marginal controller — the realistic WFFC case), give each campaign its own
+weather (block-resampled), and count how often each method **falsely** declares a
+significant benefit.
+
+![false-positive significance vs Type-B level](fig_mild_typeB_decision.png)
+
+- With the Type-A bootstrap calibrated to ~5–7 % at σ_B = 0, even a **mild**
+  systematic flips the conclusion. The bootstrap false-positive rate climbs with
+  campaign length and Type-B level — to **17 % at σ_B = 0.25 %** and **36 % at
+  σ_B = 0.5 %** by 8 years — while the honest (⊕ Type-B) interval stays ~5 %.
+- A concrete 4-year campaign at σ_B = 0.25 %: measured benefit +0.68 %,
+  **bootstrap** 95 % CI [+0.03, +1.32] % → *excludes 0 → "significant, deploy"*;
+  **honest** 95 % CI [−0.13, +1.48] % → *includes 0 → "not significant"*. Same
+  data, opposite go/no-go.
+- It is worst for the campaigns you would trust most: a longer campaign shrinks
+  the Type-A CI but not the systematic, so the most-invested studies are the most
+  likely to "discover" a benefit that is not there.
+
 ## Takeaway
 
 Report the WFFC benefit with an uncertainty that **includes Type B** —
@@ -94,9 +138,11 @@ benefit?"*
 
 ```bash
 pip install py_wake numpy scipy matplotlib      # tested with py_wake 2.6.7
-python typeB_levels.py        # headline: coverage vs campaign length × Type-B level
-python typeB_measurement.py   # single Type-B level, with the half-width floor
-python area_recipe.py         # the recommended report: area-benefit ± Type-B
+python typeB_levels.py         # headline: coverage vs campaign length × Type-B level
+python typeB_measurement.py    # single Type-B level, with the half-width floor
+python mild_typeB_decision.py  # significance go/no-go under mild Type B
+python absolute_view.py        # un-normalized (kW) per-wind-speed + raw-spread view
+python area_recipe.py          # the recommended report: area-benefit ± Type-B
 ```
 
 Each script builds a small PyWake power lookup once (a few seconds, <300 MB RAM,
@@ -109,6 +155,8 @@ single CPU) and runs Monte-Carlo coverage experiments on top.
 | `pywake_model.py` | builds the deterministic PyWake power lookup (the engine) |
 | `typeB_levels.py` | **main result** — coverage vs campaign length across Type-B levels |
 | `typeB_measurement.py` | coverage vs campaign length at one Type-B level; Type-A/Type-B half-widths |
+| `mild_typeB_decision.py` | go/no-go significance: false "significant benefit" rate under mild Type B |
+| `absolute_view.py` | un-normalized (kW) view: per-wind-speed decomposition + raw campaign-to-campaign spread |
 | `area_recipe.py` | the recommended reporting recipe: benefit = area between on/off CDFs, ± propagated Type B |
 | `main_experiment.py`, `report.py`, `bootstrap_vs_typeB.py` | earlier exploration that modelled Type B as an uncertain *atmospheric* (wake) parameter; kept for provenance but **superseded** — atmospheric variability is largely aleatoric/reducible, whereas genuine Type B is the systematic *measurement* error modelled above |
 
