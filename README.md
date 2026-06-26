@@ -11,19 +11,19 @@ experiment with a counterintuitive result:
 
 ## Read this first: benefit, the two errors, and the "true" value
 
-**What "benefit" means.** The benefit is the extra wind-farm power with wake
-steering ON versus OFF, *after controlling for the wind*. For each 1 m/s wind-speed
-bin we average the turbine-pair power during ON periods and during OFF periods, take
-the difference, and combine bins weighted by how often each occurs:
+**What "benefit" means.** We use the change-in-energy metric defined in **IEA Wind
+Task 44 WP2 (Eq. 12)** — the standard field-assessment metric. Bin the data by wind
+**direction** (i) and wind **speed** (j); in each bin average the turbine-pair power
+during flow-control (ON) and baseline (OFF) periods; difference them and
+occurrence-weight (their Eq. 13, `w_ij = N_ij / N`):
 
 ```
-benefit  =  Σ_i w_i · ( mean P_on,i − mean P_off,i )  /  Σ_i w_i
+ΔAEP  =  Σ_ij w_ij ( P_on_ij − P_off_ij )  /  Σ_ij w_ij P_off_ij        (IEA Eq. 12)
 ```
 
-(sum over wind-speed bins i; w_i = number of samples in bin i). We report it either
-in **kW** (absolute) or as a **percent of the baseline OFF power** — a 1–3 % uplift
-is typical. The percent is divided by the **baseline power**, *not* by the true
-benefit.
+A 1–3 % uplift is typical. Note what the denominator is: the **occurrence-weighted
+baseline power** — so the percent is divided by *baseline power*, **not** by the
+true benefit. (Implementation in `metrics.py`.)
 
 **The two synthetic measurement errors.** The wake model is deterministic, so the
 true ON and OFF power at every 10-min step is known exactly. We then corrupt what
@@ -55,11 +55,11 @@ not the control — the benefit is nowhere to be seen in the raw signal.
 
 ![raw data](story_1_rawdata.png)
 
-**2 · How the benefit is computed.** Bin by wind speed, average ON vs OFF in each
-bin, difference, occurrence-weight into one number (the formula above). The ON/OFF
+**2 · How the benefit is computed.** Bin by wind speed and direction, average ON vs
+OFF in each bin, difference, occurrence-weight into the IEA ΔAEP (Eq. 12). The ON/OFF
 clouds almost completely overlap; the per-bin gains are small and sign-varying. This
-campaign reads **+2.44 % of baseline power**, while the known true value is
-**+1.69 %** — the +0.75-point gap is the systematic Type-B bias (this campaign drew
+campaign reads **ΔAEP = +2.14 % of baseline power**, while the known true value is
+**+1.50 %** — the ~0.6-point gap is the systematic Type-B bias (this campaign drew
 a ≈ +1σ offset). A bootstrap of this data can only "see" the random scatter, not
 that offset.
 
@@ -113,17 +113,26 @@ excludes zero → "deploy / publish"):
 
 | campaign | bootstrap σ_B=0 | σ_B=0.25 % | σ_B=0.5 % | honest |
 |---|---|---|---|---|
-| 1 yr | 7 % | 9 % | 13 % | ~6 % |
-| 4 yr | 6 % | 11 % | 25 % | ~5 % |
-| 8 yr | 8 % | **17 %** | **36 %** | ~5 % |
+| 1 yr | 6 % | 8 % | 11 % | ~6 % |
+| 4 yr | 8 % | 15 % | 31 % | ~7 % |
+| 8 yr | 10 % | **22 %** | **42 %** | ~6 % |
 
-A concrete 4-year campaign at σ_B = 0.25 %: measured +0.68 %, **bootstrap** CI
-[+0.03, +1.32] % → *"significant, deploy"*; **honest** CI [−0.13, +1.48] % → *"not
-significant."* Same data, opposite decision.
+A concrete 4-year campaign at σ_B = 0.25 %: measured ΔAEP −0.74 %, **bootstrap** CI
+[−1.39, −0.08] % → *"significant — a real change, act on it"*; **honest** CI
+[−1.56, +0.08] % → *"not significant."* Same data, opposite decision.
 
 For WFFC this is not a footnote: realistic systematics (0.5–2 %) give Type-B floors
 of **1–4 percentage points — comparable to or larger than the benefit itself
-(~1 pp)**, so Type B can dominate the signal.
+(~1 pp)**, so Type B can dominate the signal. Sweeping the level (`typeB_levels.py`),
+the bootstrap's coverage of the true ΔAEP collapses accordingly:
+
+| campaign | σ_B=0 | 0.5 % | 1 % | 2 % |
+|---|---|---|---|---|
+| 1 yr | 95 % | 88 % | 72 % | 44 % |
+| 8 yr | 95 % | 51 % | 31 % | 17 % |
+
+*(honest interval stays ~95 % throughout; σ_B=0 confirms the bootstrap is calibrated
+when there is no Type B.)*
 
 ## The benefit, un-normalized
 
@@ -151,10 +160,11 @@ pip install py_wake numpy scipy matplotlib      # tested with py_wake 2.6.7
 python story.py                # the 4-figure visual walkthrough
 python mild_typeB_decision.py  # false-positive significance under mild Type B
 python typeB_levels.py         # coverage vs campaign length × Type-B level
-python typeB_measurement.py    # coverage at one Type-B level; Type-A vs Type-B half-widths
 python absolute_view.py        # un-normalized (kW) per-wind-speed + raw-spread view
-python area_recipe.py          # the recommended report: area-benefit ± Type-B
 ```
+
+All experiments share `metrics.py`, which implements the IEA Task 44 change-in-energy
+metric (ΔAEP, Eq. 12).
 
 Each script builds a small PyWake power lookup once (a few seconds, <300 MB RAM,
 single CPU) and runs Monte-Carlo experiments on top.
@@ -164,13 +174,12 @@ single CPU) and runs Monte-Carlo experiments on top.
 | file | purpose |
 |---|---|
 | `pywake_model.py` | builds the deterministic PyWake power lookup (the engine) |
+| `metrics.py` | the IEA Task 44 change-in-energy metric (ΔAEP, Eq. 12) + block bootstrap — shared by all experiments |
 | `story.py` | **the 4-figure narrative**: raw data → binning → uncertainty → conclusion |
 | `mild_typeB_decision.py` | false "significant benefit" rate vs campaign length under mild Type B |
-| `typeB_levels.py` | coverage vs campaign length across Type-B levels |
-| `typeB_measurement.py` | coverage at one Type-B level; Type-A vs Type-B half-widths |
-| `absolute_view.py` | un-normalized (kW) view: per-wind-speed decomposition + raw spread |
-| `area_recipe.py` | the recommended reporting recipe: benefit = area between on/off CDFs, ± propagated Type B |
-| `main_experiment.py`, `report.py`, `bootstrap_vs_typeB.py` | earlier exploration that modelled Type B as an uncertain *atmospheric* (wake) parameter; kept for provenance but **superseded** — atmospheric variability is largely aleatoric/reducible, whereas genuine Type B is the systematic *measurement* error modelled above |
+| `typeB_levels.py` | coverage of true ΔAEP vs campaign length across Type-B levels |
+| `absolute_view.py` | un-normalized (kW) view: per-wind-speed decomposition (the per-bin terms of ΔAEP) + raw spread |
+| `main_experiment.py`, `report.py`, `bootstrap_vs_typeB.py`, `typeB_measurement.py`, `area_recipe.py` | earlier exploration — `main_experiment`/`report`/`bootstrap_vs_typeB` modelled Type B as an uncertain *atmospheric* parameter (largely aleatoric/reducible, **superseded**); `typeB_measurement`/`area_recipe` predate the shared `metrics.py` and the block-resampled calibration. Kept for provenance |
 
 ## References
 
