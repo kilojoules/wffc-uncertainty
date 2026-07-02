@@ -1,190 +1,215 @@
-# More measurement, more false confidence — Type B in WFFC field validation
+# The cost of omitting Type B in WFFC field validation
 
-A small, self-contained [PyWake](https://gitlab.windenergy.dtu.dk/TOPFARM/PyWake)
-experiment with a counterintuitive result:
+A self-contained [PyWake](https://gitlab.windenergy.dtu.dk/TOPFARM/PyWake)
+experiment quantifying a specific, decision-level failure mode in
+wind-farm-flow-control (WFFC) field assessment:
 
-> **In wind-farm-flow-control (WFFC) field tests, collecting more data can make
-> the standard conclusion *more* wrong, not less.** A longer, better-funded
-> campaign is *more* likely to declare a wake-steering "benefit" that isn't real —
-> because the universally-used bootstrap confidence interval shrinks toward zero
-> while a systematic (GUM Type B) measurement error stays fixed and unseen.
+> A block-bootstrap confidence interval on the measured energy benefit captures
+> only the **statistical (GUM Type A)** uncertainty. If a **systematic
+> differential (Type B)** measurement error is present, the bootstrap interval
+> shrinks with campaign length while the systematic does not — so the
+> probability of declaring a *nonexistent* benefit "statistically significant"
+> **grows** as more data are collected. We quantify that growth, show the
+> repair (propagate Type B alongside the bootstrap), and show which kinds of
+> systematics actually matter (differential ones; common-mode errors cancel in
+> the toggle design).
 
-## Read this first: benefit, the two errors, and the "true" value
+This is deliberately *not* a claim that the bootstrap is wrong — with no
+systematic present it is correctly calibrated here (the control arms sit on
+their nominal levels). It quantifies the cost of stopping there.
 
-**What "benefit" means.** We use the change-in-energy metric defined in **IEA Wind
-Task 44 WP2 (Eq. 12)** — the standard field-assessment metric. Bin the data by wind
-**direction** (i) and wind **speed** (j); in each bin average the turbine-pair power
-during flow-control (ON) and baseline (OFF) periods; difference them and
-occurrence-weight (their Eq. 13, `w_ij = N_ij / N`):
+## What current practice reports
+
+Toggle-test field studies overwhelmingly quantify uncertainty on the
+energy-uplift metric with resampling: Fleming et al. (2019), Doekemeijer et
+al. (2021), Simley et al. (2021), Fleming et al. (2021), Simley et al. (2022)
+and Howland et al. (2022) all report bootstrap 95 % confidence intervals on
+power/energy ratios, as catalogued in the
+[IEA Wind Task 44 review](https://iea-wind.org/task44/) (§3.6), which notes
+that *"when uncertainty is reported, the overwhelming majority of papers report
+statistical, Type A, uncertainty."* The notable exception is Kanev (2020b),
+which propagates Type-B sensor uncertainties following the GUM/IEC 61400-12-2.
+The contribution here is not "Type B exists" — it is **how the omission scales
+with campaign length at the go/no-go decision level.**
+
+## Read this first: the metric, the errors, and the truth
+
+**Metric.** The IEA Task 44 change-in-energy metric (their Eq. 12; `metrics.py`),
+2-D binned by wind direction × wind speed with occurrence weights (Eq. 13):
 
 ```
-ΔAEP  =  Σ_ij w_ij ( P_on_ij − P_off_ij )  /  Σ_ij w_ij P_off_ij        (IEA Eq. 12)
+ΔAEP = Σ_ij w_ij ( P̄_on,ij − P̄_off,ij ) / Σ_ij w_ij P̄_off,ij
 ```
 
-A 1–3 % uplift is typical. Note what the denominator is: the **occurrence-weighted
-baseline power** — so the percent is divided by *baseline power*, **not** by the
-true benefit. (Implementation in `metrics.py`.)
+The denominator is baseline power — nothing is ever normalized by the true
+benefit.
 
-**The two synthetic measurement errors.** The wake model is deterministic, so the
-true ON and OFF power at every 10-min step is known exactly. We then corrupt what
-the analyst *records*, the way real instruments do:
+**Physics (fixed, not tuned).** Two V80s 5 D apart; the upstream turbine steers
+with a realistic schedule γ(wd, ws) = 25°·sign(wd−270°), tapering linearly to
+zero between 11 and 13 m/s (controllers stop steering approaching rated).
+Bastankhah–Porte-Agel + Jiménez at the PyWake-default wake coefficient
+k = 0.0325 for **every** experiment. The resulting true benefit is
+**ΔAEP = +7.2 %** for this close-spaced, ideally-steered pair — stated, not
+dialed. One year of real 10-min Risø inflow, aligned sector 266–274°;
+campaigns are built by resampling 2-day blocks (a disclosed idealization — see
+Limitations).
 
-- **Type A — random, reducible.** Every logged power is multiplied by `(1 + ε)`,
-  with `ε ~ N(0, 2%)` drawn fresh each sample. Plain sensor noise: it averages out
-  with more data, and it is exactly what the bootstrap captures.
-- **Type B — systematic, irreducible.** During ON (yawed) periods the logged power
-  carries a *fixed* unknown gain offset `(1 + b)`, with `b ~ N(0, σ_B)` drawn
-  **once per campaign** and identical at every timestep — a stand-in for an
-  uncorrected yaw-dependent metering / transfer-function error (an IEA Task 44
-  source). Because it is the same at every step, no amount of averaging or
-  resampling removes it, and the bootstrap never sees it. (σ_B is the knob we sweep;
-  0.25–0.5 % is "mild".)
+**Truth.** The estimand is the deterministic clean ΔAEP on a fixed,
+length-independent bin set (both control states evaluated from the wake model
+on all samples — no toggle noise, no bin-mask drift). For the null experiments
+we use a **placebo toggle** (control ON does nothing physically), making the
+true benefit *exactly zero by construction* — no parameter tuning.
 
-**The "true benefit" is a check-target, not a normalizer.** Because the model is
-deterministic we compute the true benefit once from the *clean* (error-free) power.
-It is used only to ask *"did the reported interval contain it?"* — it never divides
-or rescales anything. The percent benefit is `gain ÷ baseline power`; the absolute
-(kW) view tells the identical story with no percent at all, so the normalization is
-cosmetic, not load-bearing.
+**Synthetic measurement errors** (injected end-to-end into the observed power):
 
-## The story in four figures
+- **Type A** — every logged power × (1 + ε), ε ~ N(0, 2 %) i.i.d. per sample.
+  Random; averages out; exactly what the bootstrap measures.
+- **Type B** — a gain (1 + b), b ~ N(0, σ_B), drawn **once per campaign** and
+  constant throughout: *irreducible by collecting more of the same data* (it
+  could of course be removed by better calibration — that is the other honest
+  remedy). Three carriers are compared: applied to ON-periods only
+  (differential), to both states (common-mode), or to the ON-period *measured
+  wind speed* used for binning (the physical carrier of a yaw-dependent
+  transfer-function error).
 
-**1 · What a toggle test records.** The controller is switched ON/OFF every ~70 min;
-power is logged with realistic sensor errors. The power swings track the *weather*,
-not the control — the benefit is nowhere to be seen in the raw signal.
+## Result 1 — which systematics matter (`carrier_typeB.py`)
+
+![carrier comparison](fig_carrier_typeB.png)
+
+- **Common-mode errors cancel exactly.** Eq. 12 is invariant to a gain applied
+  to both states — this is the toggle design's real strength, and it means
+  ordinary absolute power-measurement uncertainty (0.5–2 %) largely does *not*
+  threaten the result.
+- **Differential errors survive.** A 0.5 % ON-only power gain adds ±0.51 pp of
+  campaign-to-campaign systematic spread (analytically dΔAEP/db = 100 + ΔAEP).
+- **The physically-motivated carrier is the worst.** A 0.5 % yaw-dependent bias
+  on the *measured wind speed* (bin migration) contributes ±1.17 pp — larger
+  than the power-gain carrier, with the opposite wind-speed structure
+  (concentrated in Region II where the power curve is steep, ~zero at rated).
+  Where the systematic enters matters as much as its size.
+
+## Result 2 — the go/no-go decision under mild Type B (`mild_typeB_decision.py`)
+
+Placebo controller (true ΔAEP = 0 exactly). How often does each report declare
+a benefit (one-sided: 95 % CI lower bound > 0)?
+
+![false benefit declared](fig_mild_typeB_decision.png)
+
+| campaign | σ_B=0 (control) | 0.1 % | 0.25 % | 0.5 % |
+|---|---|---|---|---|
+| 1 yr | 2.7 % | 2.0 % | 3.7 % | 8.0 % |
+| 4 yr | 2.5 % | 3.7 % | 10.3 % | 22.3 % |
+| 8 yr | 3.2 % | 4.8 % | **15.7 %** | **29.8 %** |
+
+*(nominal 2.5 %; R = 600 campaigns per cell, Wilson bands in the figure; the
+honest interval — bootstrap ⊕ propagated Type B — stays at 1–3 % everywhere.)*
+
+The control column shows the bootstrap itself is calibrated at every length;
+the growth across each row is therefore attributable to the omitted
+systematic. Concrete exemplar (4 yr, σ_B = 0.25 %, true benefit zero):
+measured ΔAEP +0.44 %, **bootstrap** CI [+0.02, +0.86] % → *benefit declared,
+deploy*; **honest** CI [−0.21, +1.09] % → *not significant*. Same data,
+opposite decision — and the failure rate is highest for the longest campaigns.
+
+## Result 3 — coverage and the honest repair (`typeB_levels.py`)
+
+Real controller (true ΔAEP = +7.2 %), end-to-end injection, coverage of the
+true value by the bootstrap 95 % CI:
+
+![coverage vs level](fig_typeB_levels.png)
+
+Excess coverage loss relative to the σ_B = 0 control:
+
+| campaign | σ_B=0.25 % | 0.5 % | 1 % |
+|---|---|---|---|
+| 1 yr | +1.5 pp | +5.5 pp | +19 pp |
+| 4 yr | +6.5 pp | +21 pp | +51 pp |
+| 8 yr | +11 pp | +36 pp | +65 pp |
+
+The common-mode arm tracks the control at every length (cancellation,
+verified). The honest interval needs only a *reasonable* Type-B prior: with
+the assumed σ_B equal to truth, coverage is 93–96 % for campaigns ≥ 1 yr; a
+2× overestimate is safely conservative; a 2× *under*estimate degrades to 75 %
+by 8 yr — the prior matters, but it does not need to be exact.
+
+Calibration note: at 0.5 yr the block bootstrap itself undercovers (~85 %, a
+small-sample limitation visible in the control arm) — which is why effects are
+reported as excess over the control. The placebo experiment, whose truth is
+exact, is calibrated at all lengths.
+
+## The visual story (`story.py`)
+
+Raw toggle data → binning → the two uncertainties → the conclusion, in one
+consistent scenario (fixed k, realistic controller, σ_B = 0.5 % ON-only):
 
 ![raw data](story_1_rawdata.png)
-
-**2 · How the benefit is computed.** Bin by wind speed and direction, average ON vs
-OFF in each bin, difference, occurrence-weight into the IEA ΔAEP (Eq. 12). The ON/OFF
-clouds almost completely overlap; the per-bin gains are small and sign-varying. This
-campaign reads **ΔAEP = +2.14 % of baseline power**, while the known true value is
-**+1.50 %** — the ~0.6-point gap is the systematic Type-B bias (this campaign drew
-a ≈ +1σ offset). A bootstrap of this data can only "see" the random scatter, not
-that offset.
-
-![binning and power gain](story_2_binning.png)
-
-**3 · The number has two uncertainties.** *Type A* (random sensor noise + finite
-samples) is what the bootstrap measures — it shrinks ∝ 1/√N. *Type B* (a
-systematic, yaw-correlated calibration/transfer error) is a **fixed floor** that
-more data cannot reduce. The bootstrap reports only Type A.
-
-![two uncertainties](story_3_uncertainty.png)
-
-**4 · The consequence.** How often the reported 95 % interval actually contains the
-known true benefit (the clean-model value from "read this first"). With no Type B
-the bootstrap is fine; with even a mild systematic its coverage **falls as the
-campaign grows** (it tightens around a biased value), while the honest interval
-(bootstrap ⊕ propagated Type B) holds ~95 %.
-
+![binning](story_2_binning.png)
+![uncertainty](story_3_uncertainty.png)
 ![conclusion](story_4_conclusion.png)
 
-## Why this happens
+## What to report
 
-The bootstrap estimates only Type A, so as the campaign grows its CI tightens
-∝ 1/√N toward **zero width around a point that still carries the fixed Type-B
-bias.** A tighter interval around a biased estimate excludes the truth *more* often.
-More data buys precision about the wrong number — and the best-funded studies are
-the most confidently wrong. (Type B is irreducible by construction: the systematic
-offset is identical at every timestep, so neither averaging nor resampling the data
-can reveal it.)
+1. The block-bootstrap CI, as now — it is the right Type-A estimate.
+2. **Plus a propagated Type-B term** for *differential* systematics
+   (yaw-dependent transfer functions, ON/OFF-asymmetric sensor paths),
+   combined in quadrature — the GUM approach demonstrated here, in the spirit
+   of Kanev (2020b) and of the validation framework of
+   [Quick et al. (2025)](https://doi.org/10.1016/j.renene.2024.122028)
+   (aleatoric variability lives in the data; epistemic uncertainty is
+   propagated and reported).
+3. Or, equivalently: invest in calibrating the differential channels away —
+   the common-mode result shows the toggle design already protects against
+   everything else.
 
-## The experiment
+## Limitations (disclosed idealizations)
 
-- **Deterministic truth.** Two V80 turbines (D = 80 m) 5 D apart; upstream yaws 25°
-  for control. Bastankhah–Porte-Agel + Jiménez deflection at a **fixed** wake
-  coefficient, so the true benefit is known exactly — no hidden parameter games.
-  One year of real 10-min inflow, aligned waked sector (266–274°); each campaign
-  draws its own weather by 2-day block resampling, extended to 8 years.
-- **Synthetic measurement errors** (Type A random 2 %, Type B systematic σ_B once
-  per campaign) are added to the clean power as defined in *Read this first*,
-  following GUM / [Quick et al. 2025](https://doi.org/10.1016/j.renene.2024.122028).
-- **Reported uncertainty** is the standard block-bootstrap 95 % CI (Type A); the
-  "honest" interval adds the propagated Type B in quadrature.
-
-## Sharper cut: the go/no-go decision under *mild* Type B
-
-Set the true benefit to ≈ 0 (a marginal controller — realistic) and ask how often
-each method *falsely* declares a statistically significant benefit (95 % interval
-excludes zero → "deploy / publish"):
-
-![false-positive significance](fig_mild_typeB_decision.png)
-
-| campaign | bootstrap σ_B=0 | σ_B=0.25 % | σ_B=0.5 % | honest |
-|---|---|---|---|---|
-| 1 yr | 6 % | 8 % | 11 % | ~6 % |
-| 4 yr | 8 % | 15 % | 31 % | ~7 % |
-| 8 yr | 10 % | **22 %** | **42 %** | ~6 % |
-
-A concrete 4-year campaign at σ_B = 0.25 %: measured ΔAEP −0.74 %, **bootstrap** CI
-[−1.39, −0.08] % → *"significant — a real change, act on it"*; **honest** CI
-[−1.56, +0.08] % → *"not significant."* Same data, opposite decision.
-
-For WFFC this is not a footnote: realistic systematics (0.5–2 %) give Type-B floors
-of **1–4 percentage points — comparable to or larger than the benefit itself
-(~1 pp)**, so Type B can dominate the signal. Sweeping the level (`typeB_levels.py`),
-the bootstrap's coverage of the true ΔAEP collapses accordingly:
-
-| campaign | σ_B=0 | 0.5 % | 1 % | 2 % |
-|---|---|---|---|---|
-| 1 yr | 95 % | 88 % | 72 % | 44 % |
-| 8 yr | 95 % | 51 % | 31 % | 17 % |
-
-*(honest interval stays ~95 % throughout; σ_B=0 confirms the bootstrap is calibrated
-when there is no Type B.)*
-
-## The benefit, un-normalized
-
-Reporting as a percent of baseline hides structure; in absolute kW
-(`absolute_view.py`) the net benefit is a delicate cancellation of large,
-sign-flipping per-wind-speed contributions, and the systematic Type-B error
-(`b·P_on`) is **largest in the high-wind bins where the wake effect has vanished.**
-
-![absolute view](fig_absolute_view.png)
-
-## What to report instead
-
-Report the benefit with an uncertainty that **includes Type B** — propagate the
-systematic sensor/model uncertainties through the wake response, on top of the
-bootstrap. A clean way is the **area metric** (the area between the on/off power
-CDFs, [Quick et al. 2025](https://doi.org/10.1016/j.renene.2024.122028)): the
-aleatoric scatter lives inside the CDFs, and you report the propagated Type-B
-spread. The bootstrap alone answers *"how precisely did I pin down this campaign's
-mean?"* (→ 0 with data) — **not** *"how uncertain is the benefit?"*
+- **One base year, block-resampled.** No interannual variability; the weather
+  process satisfies the bootstrap's exchangeability assumptions by
+  construction. Quantitative length-scalings are conditional on this; the
+  qualitative mechanism (Type A shrinks, a constant systematic does not) is
+  not.
+- **b is constant for the whole campaign.** A systematic with a ~1-yr
+  correlation time would partially average down; the monotone growth assumes
+  the error persists (e.g., an uncorrected transfer function, which does).
+- Single site, layout (2 turbines, 5 D), wake model, and toggle scheme
+  (every 7 waked-sector samples ≈ hours-to-days of calendar time). The
+  sensitivity dΔAEP/db = 100 + ΔAEP is exact for any of these choices; the
+  weather-driven Type-A schedule is not.
+- σ_A = 2 % i.i.d. is synthetic; real 10-min scatter is larger and correlated,
+  which would slow (not remove) the Type-A shrinkage.
 
 ## Run it
 
 ```bash
 pip install py_wake numpy scipy matplotlib      # tested with py_wake 2.6.7
-python story.py                # the 4-figure visual walkthrough
-python mild_typeB_decision.py  # false-positive significance under mild Type B
-python typeB_levels.py         # coverage vs campaign length × Type-B level
-python absolute_view.py        # un-normalized (kW) per-wind-speed + raw-spread view
+python carrier_typeB.py        # which systematics matter (common-mode cancels)
+python mild_typeB_decision.py  # false 'benefit declared' rate vs campaign length
+python typeB_levels.py         # coverage, excess-over-control, misspecification
+python story.py                # the 4-figure walkthrough
+python absolute_view.py        # un-normalized (kW) per-wind-speed view
 ```
 
-All experiments share `metrics.py`, which implements the IEA Task 44 change-in-energy
-metric (ΔAEP, Eq. 12).
+Shared modules: `pywake_model.py` (deterministic lookup, realistic yaw
+schedule, fixed k), `metrics.py` (IEA Eq. 12 + vectorized B=1000 block
+bootstrap + fixed-mask estimand), `campaigns.py` (block-resampled campaigns,
+collision-free seeds, end-to-end error injection). Each script runs on a
+laptop (<1 GB RAM, single CPU, minutes to ~half an hour).
 
-Each script builds a small PyWake power lookup once (a few seconds, <300 MB RAM,
-single CPU) and runs Monte-Carlo experiments on top.
-
-## Repository contents
-
-| file | purpose |
-|---|---|
-| `pywake_model.py` | builds the deterministic PyWake power lookup (the engine) |
-| `metrics.py` | the IEA Task 44 change-in-energy metric (ΔAEP, Eq. 12) + block bootstrap — shared by all experiments |
-| `story.py` | **the 4-figure narrative**: raw data → binning → uncertainty → conclusion |
-| `mild_typeB_decision.py` | false "significant benefit" rate vs campaign length under mild Type B |
-| `typeB_levels.py` | coverage of true ΔAEP vs campaign length across Type-B levels |
-| `absolute_view.py` | un-normalized (kW) view: per-wind-speed decomposition (the per-bin terms of ΔAEP) + raw spread |
-| `main_experiment.py`, `report.py`, `bootstrap_vs_typeB.py`, `typeB_measurement.py`, `area_recipe.py` | earlier exploration — `main_experiment`/`report`/`bootstrap_vs_typeB` modelled Type B as an uncertain *atmospheric* parameter (largely aleatoric/reducible, **superseded**); `typeB_measurement`/`area_recipe` predate the shared `metrics.py` and the block-resampled calibration. Kept for provenance |
+`main_experiment.py`, `report.py`, `bootstrap_vs_typeB.py`,
+`typeB_measurement.py`, `area_recipe.py` are earlier iterations kept for
+provenance (an atmospheric-parameter Type-B framing and pre-rework metrics),
+superseded by the above.
 
 ## References
 
+- IEA Wind Task 44, *Review and Best Practices for Wind Farm Flow Control
+  Field Assessment* — toggle tests, the ΔAEP metric (Eq. 12), bootstrap
+  practice and the Type-A/Type-B discussion (§3.6, §4.2, §4.7).
 - J. Quick et al., *Wind speed vertical extrapolation model validation under
   uncertainty*, Renewable Energy 240 (2025) 122028 —
-  <https://doi.org/10.1016/j.renene.2024.122028>
-- IEA Wind Task 44, *Review and Best Practices for Wind Farm Flow Control Field
-  Assessment* (toggle tests, energy-ratio metrics, bootstrap practice, Type A/B).
+  <https://doi.org/10.1016/j.renene.2024.122028>.
+- S. Kanev (2020b), TNO report — GUM/IEC 61400-12-2 Type-B propagation for
+  WFFC AEP assessment (the exception that proves the rule).
+- Fleming et al. (2019), Doekemeijer et al. (2021), Simley et al. (2021, 2022),
+  Fleming et al. (2021), Howland et al. (2022) — field campaigns reporting
+  bootstrap CIs on the uplift (see IEA Task 44 §3.6 for the catalogue).

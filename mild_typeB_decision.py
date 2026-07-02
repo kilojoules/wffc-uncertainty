@@ -1,109 +1,104 @@
 """
-Different CONCLUSIONS under mild Type B, using the IEA Task 44 change-in-energy
-metric (dAEP, Eq. 12; see metrics.py).
+Go/no-go decisions under mild Type B — rebuilt per the adversarial review.
 
-Decision: does the 95% interval on dAEP exclude zero -> "WFFC gives a
-statistically significant benefit"?  True dAEP set ~0 (marginal controller).
-Each campaign draws its own weather (2-day block resample). We count how often
-each method falsely declares significance.
+Null model: a PLACEBO toggle (controller ON does nothing physically), so the
+true dAEP is EXACTLY zero by construction — no wake-coefficient tuning (M4).
+The systematic measurement error exists regardless of what the controller does.
+
+Decision rules (M5 — the one-sided rate is the honest headline):
+  * "benefit declared":  CI lower bound > 0        (one-sided, what 'deploy' means)
+  * "change declared" :  |estimate| > half-width   (two-sided significance)
+
+End-to-end injection, fixed estimand mask, B=1000 shared bootstrap,
+collision-free seeds, Wilson error bars, rates reported alongside the
+sigma_B=0 control (C1/M3).
 """
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from pywake_model import build_lookup, K_GRID
+import campaigns as C
 import metrics as M
 
-F_OFF, F_ON, _, _ = build_lookup()
-from py_wake.examples.data import example_data_path
-d = np.load(example_data_path + "/time_series.npz"); WD, WS = d["wd"], d["ws"]
-DT = 1 / 6 / 24; TY = len(WD) * DT
-S = (WD >= 266) & (WD <= 274) & (WS >= 3) & (WS <= 25); idx0 = np.where(S)[0]
-wd_s, ws_s, t_s = WD[idx0], WS[idx0], idx0 * DT
-SIG_A, Z = 0.02, 1.959964
+Z = 1.959964
+EXP_ID = 2
+Ls = [0.5, 1, 2, 4, 8]
+R = 600
+LEVELS = [0.0, 0.001, 0.0025, 0.005]         # sigma_B: 0 (control), 0.1%, 0.25%, 0.5%
+COLORS = ["#2ca02c", "#1f77b4", "#9467bd", "#d62728"]
+dDdb = 100.0                                  # placebo: dAEP≈0 -> sensitivity ≈ 100 %/unit-b
+
+print("Null: placebo toggle -> true dAEP = 0 exactly (no parameter tuning).")
+
+ests = {}; hws = {}
+for ai, s in enumerate(LEVELS):
+    e = np.empty((len(Ls), R)); h = np.empty((len(Ls), R))
+    for Li, L in enumerate(Ls):
+        for r in range(R):
+            rng = C.rng_for(EXP_ID, ai * 1000 + Li, r)
+            idx, blocks, on = C.make_campaign(L, rng)
+            pc, po, bid, b = C.observe(idx, on, rng, sigma_b=s, mode="on_only",
+                                       placebo=True)
+            _, est, _ = M.campaign_estimates(pc, po, on, bid, fixed=C.FIXED_MASK)
+            h[Li, r] = M.block_boot_halfwidth(po, on, bid, blocks, n_boot=1000,
+                                              rng=rng, fixed=C.FIXED_MASK)
+            e[Li, r] = est
+    ests[s] = e; hws[s] = h
+    print(f"  sigma_B={s*100:.2g}% simulated.")
 
 
-def fp(w, s, k, c):
-    w = np.atleast_1d(w); s = np.clip(np.atleast_1d(s), 3, 25)
-    return (F_ON if c else F_OFF)(np.column_stack([w, s, np.full(np.shape(w), k)]))
+def rates(s, honest=False):
+    e, h = ests[s], hws[s]
+    hw = np.hypot(h, Z * dDdb * s) if honest else h
+    one = 100 * (e - hw > 0).mean(axis=1)                 # benefit declared
+    two = 100 * (np.abs(e) > hw).mean(axis=1)             # change declared
+    return one, two
 
 
-on_full = ((np.arange(len(wd_s)) // 7) % 2 == 1)
-kc = np.linspace(K_GRID[0], K_GRID[-1], 80)
-av = np.array([M.delta_aep(np.where(on_full, fp(wd_s, ws_s, k, 1), fp(wd_s, ws_s, k, 0)),
-                           on_full, wd_s, ws_s) for k in kc])
-K0 = float(np.interp(0.0, av[::-1], kc[::-1]))
-PON, POFF = fp(wd_s, ws_s, K0, 1), fp(wd_s, ws_s, K0, 0)
-TRUE = M.delta_aep(np.where(on_full, PON, POFF), on_full, wd_s, ws_s)
-eps = 1e-3
-dDdb = (M.delta_aep(np.where(on_full, PON * (1 + eps), POFF), on_full, wd_s, ws_s) - TRUE) / eps
-print(f"k0={K0:.4f}  true dAEP = {TRUE:+.3f}%  (marginal)  dDdb={dDdb:.0f}")
+print(f"\n{'':>6}" + "".join(f"  sB={s*100:.2g}%".rjust(9) for s in LEVELS))
+print("one-sided 'benefit declared' rate [%], bootstrap-only:")
+for Li, L in enumerate(Ls):
+    print(f"{L:>5}y" + "".join(f"{rates(s)[0][Li]:9.1f}" for s in LEVELS))
+print("two-sided 'change declared' rate [%], bootstrap-only:")
+for Li, L in enumerate(Ls):
+    print(f"{L:>5}y" + "".join(f"{rates(s)[1][Li]:9.1f}" for s in LEVELS))
+print("one-sided, honest interval (bootstrap ⊕ propagated Type B):")
+for Li, L in enumerate(Ls):
+    print(f"{L:>5}y" + "".join(f"{rates(s, honest=True)[0][Li]:9.1f}" for s in LEVELS))
 
-blk_id = (t_s / 2).astype(int); blocks = [np.where(blk_id == b)[0] for b in np.unique(blk_id)]
-NBLK = len(blocks)
-Ls = np.array([0.5, 1, 2, 4, 8]); R = 600
-dsamp = {}; hwb = {}
-for L in Ls:
-    nblk = max(2, round(L * NBLK)); ds = np.empty(R); hh = np.empty(R)
-    for r in range(R):
-        rng = np.random.default_rng(12000 + r + int(L * 7))
-        pick = rng.integers(0, NBLK, nblk); members = [blocks[p] for p in pick]
-        idx = np.concatenate(members); cb = np.repeat(np.arange(nblk), [len(m) for m in members])
-        on = ((np.arange(len(idx)) // 7) % 2 == 1)
-        po = PON[idx] * (1 + SIG_A * rng.standard_normal(len(idx)))
-        pf = POFF[idx] * (1 + SIG_A * rng.standard_normal(len(idx)))
-        p = np.where(on, po, pf); wdc = wd_s[idx]; wsc = ws_s[idx]
-        ds[r] = M.delta_aep(p, on, wdc, wsc) - TRUE
-        bid = M._bin(wdc, wsc); ub = np.unique(cb); mem = [np.where(cb == b)[0] for b in ub]; nbk = len(ub)
-        be = np.empty(150)
-        for i in range(150):
-            sel = np.concatenate([mem[j] for j in rng.integers(0, nbk, nbk)])
-            be[i] = M.delta_aep(p[sel], on[sel], None, None, bid=bid[sel])
-        lo, hi = np.nanpercentile(be, [2.5, 97.5]); hh[r] = (hi - lo) / 2
-    dsamp[L] = ds; hwb[L] = hh
-    print(f"  L={L:>4}y  std(est)={ds.std():.3f}pp  mean hw_boot={hh.mean():.3f}pp")
-
-levels = [0.0, 0.001, 0.0025, 0.005]
-zr = np.random.default_rng(321).standard_normal((len(Ls), R))
-fpr_b = {s: [] for s in levels}; fpr_h = {s: [] for s in levels}
-for s in levels:
-    tb = Z * abs(dDdb) * s
-    for li, L in enumerate(Ls):
-        est = TRUE + dsamp[L] + dDdb * s * zr[li]
-        fpr_b[s].append(100 * np.mean(np.abs(est) > hwb[L]))
-        fpr_h[s].append(100 * np.mean(np.abs(est) > np.hypot(hwb[L], tb)))
-
-print(f"\nFalse 'significant benefit' rate (true dAEP ~ 0):")
-print(f"{'L':>5} " + " ".join(f"B@{s*100:.2g}%".rjust(7) for s in levels)
-      + "  | " + " ".join(f"H@{s*100:.2g}%".rjust(7) for s in levels))
-for li, L in enumerate(Ls):
-    print(f"{L:>4}y " + " ".join(f"{fpr_b[s][li]:6.0f}%" for s in levels)
-          + "  | " + " ".join(f"{fpr_h[s][li]:6.0f}%" for s in levels))
-
-li4 = int(np.where(Ls == 4)[0][0]); s_ex = 0.0025; tb_ex = Z * abs(dDdb) * s_ex
+# positive exemplar (M5): bootstrap declares a benefit, honest does not
+s_ex = 0.0025; Li4 = Ls.index(4); tb = Z * dDdb * s_ex
 for r in range(R):
-    est = TRUE + dsamp[4][r] + dDdb * s_ex * zr[li4][r]; hb = hwb[4][r]; hh_ = np.hypot(hb, tb_ex)
-    if abs(est) > hb and abs(est) <= hh_:
-        print(f"\nExample (4 yr, sigma_B=0.25%):  measured ΔAEP {est:+.2f}%")
-        print(f"  bootstrap 95% CI [{est-hb:+.2f}, {est+hb:+.2f}] % -> excludes 0 -> SIGNIFICANT, deploy")
-        print(f"  honest   95% CI [{est-hh_:+.2f}, {est+hh_:+.2f}] % -> includes 0 -> not significant")
+    est = ests[s_ex][Li4, r]; hb = hws[s_ex][Li4, r]; hh = np.hypot(hb, tb)
+    if est - hb > 0 and est - hh <= 0:
+        print(f"\nExemplar (4 yr, sigma_B=0.25%, true benefit = 0):")
+        print(f"  measured ΔAEP = {est:+.2f}%")
+        print(f"  bootstrap 95% CI [{est-hb:+.2f}, {est+hb:+.2f}] % -> benefit declared, deploy")
+        print(f"  honest    95% CI [{est-hh:+.2f}, {est+hh:+.2f}] % -> not significant")
         break
 
-fig, ax = plt.subplots(figsize=(8.5, 5.5))
-cols = ["#2ca02c", "#1f77b4", "#9467bd", "#d62728"]
-for s, c in zip(levels, cols):
-    lab = "control ($\\sigma_B$=0)" if s == 0 else f"$\\sigma_B$={s*100:.2g}%"
-    ax.plot(Ls, fpr_b[s], "o-", color=c, label=f"bootstrap, {lab}")
+# ---- figure -----------------------------------------------------------------
+fig, ax = plt.subplots(1, 2, figsize=(13, 5.4), sharey=True)
+x = np.array(Ls)
+for s, c in zip(LEVELS, COLORS):
+    one_b, _ = rates(s); one_h, _ = rates(s, honest=True)
+    ko = np.round(one_b * R / 100).astype(int)
+    lo = np.array([M.wilson(k, R)[0] for k in ko]); hi = np.array([M.wilson(k, R)[1] for k in ko])
+    lab = f"$\\sigma_B$={s*100:.2g}%" + ("  [control]" if s == 0 else "")
+    ax[0].plot(x, one_b, "o-", color=c, label=lab)
+    ax[0].fill_between(x, lo, hi, color=c, alpha=0.12)
     if s > 0:
-        ax.plot(Ls, fpr_h[s], "s--", color=c, alpha=0.55)
-ax.axhline(5, ls=":", color="k", lw=1.4, label="nominal 5%")
-ax.set_xscale("log"); ax.set_xticks(Ls); ax.set_xticklabels([f"{l:g}y" for l in Ls])
-ax.set_xlabel("campaign length"); ax.set_ylabel("'significant ΔAEP' false-positive rate [%]")
-ax.set_title("Different conclusions under MILD Type B (IEA ΔAEP metric)\n"
-             "solid = bootstrap (false positives climb); dashed = honest (stays ~5%)", fontsize=11)
-ax.legend(fontsize=8, ncol=2, loc="upper left"); ax.grid(alpha=0.3)
-ax.text(0.97, 0.45, "WFFC actually does ~nothing here.\nbootstrap increasingly 'finds' a\n"
-        "significant benefit; honest does not.", transform=ax.transAxes, ha="right",
-        fontsize=8.5, color=".25", bbox=dict(boxstyle="round", fc="white", ec="#ccc"))
+        ax[1].plot(x, one_h, "s--", color=c, label=lab)
+ax[1].plot(x, rates(0.0)[0], "o-", color=COLORS[0], label="$\\sigma_B$=0  [control]")
+for a, ttl in zip(ax, ["Bootstrap only — false 'benefit declared' rate",
+                       "Bootstrap ⊕ propagated Type B (honest)"]):
+    a.axhline(2.5, ls=":", color="k", lw=1.2)
+    a.text(x[0], 2.8, "nominal 2.5% (one-sided)", fontsize=7.5, color=".3")
+    a.set_xscale("log"); a.set_xticks(x); a.set_xticklabels([f"{l:g}y" for l in Ls])
+    a.set_xlabel("campaign length"); a.set_title(ttl, fontsize=10.5)
+    a.grid(alpha=0.3); a.legend(fontsize=8.5)
+ax[0].set_ylabel("false 'benefit declared' rate [%]  (true ΔAEP = 0)")
+plt.suptitle("Placebo controller: how often is a nonexistent benefit declared significant?",
+             fontsize=11, y=1.0)
 plt.tight_layout(); plt.savefig("fig_mild_typeB_decision.png", dpi=130); plt.close()
 print("\nWrote fig_mild_typeB_decision.png")
