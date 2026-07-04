@@ -44,7 +44,13 @@ K_GRID = np.linspace(0.018, 0.052, 18)
 
 
 def yaw_schedule(wd, ws):
-    """Controller yaw [deg] as a function of wind direction and speed."""
+    """Controller yaw [deg] as a function of wind direction and speed.
+
+    Note: np.sign(0) = 0, so exactly at wd = 270.0 (the aligned direction, which
+    is also a bin edge) the schedule commands 0 deg and is discontinuous there.
+    This is a measure-zero event for the continuous Riso inflow and, where it
+    does land, DEFLATES the benefit (no steering) — it never inflates ΔAEP.
+    """
     taper = np.clip((WS_TAPER_HI - np.asarray(ws, float)) / (WS_TAPER_HI - WS_TAPER_LO), 0.0, 1.0)
     return GAMMA0 * np.sign(np.asarray(wd, float) - 270.0) * taper
 

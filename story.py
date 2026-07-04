@@ -78,7 +78,7 @@ ax[1].set_xlabel("wind speed [m/s]"); ax[1].set_ylabel("per-bin power gain [kW]"
 bid0 = M.bin_index(C.WD_S, C.WS_S)
 _, agg, _ = M.campaign_estimates(np.where(on0, C.PON, C.POFF), p_obs, on0, bid0, fixed=C.FIXED_MASK)
 ax[1].set_title("per-bin gain  →  IEA change-in-energy ΔAEP", fontsize=11, loc="left")
-ax[1].text(0.5, 0.97, f"ΔAEP (Eq. 12) = {agg:+.2f}% of baseline\n(true value {TRUE:+.2f}%; "
+ax[1].text(0.5, 0.97, f"ΔAEP (IEA Task 44) = {agg:+.2f}% of baseline\n(true value {TRUE:+.2f}%; "
            f"gap = the systematic)", transform=ax[1].transAxes, ha="center", va="top",
            fontsize=9, bbox=dict(boxstyle="round", fc="white", ec="#ccc"))
 plt.tight_layout(); plt.savefig("story_2_binning.png", dpi=130); plt.close()

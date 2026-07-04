@@ -1,8 +1,9 @@
 """
-WFFC change-in-energy metric, exactly as defined in IEA Wind Task 44 WP2, Sec 4.2.1:
+WFFC change-in-energy metric (the IEA Wind Task 44 field-assessment quantity, as
+formalized in the in-preparation Task 44 review — not a published equation number):
 
-    dAEP = Σ_ij w_ij ( Pbar_WFFC_ij − Pbar_Base_ij ) / Σ_ij w_ij Pbar_Base_ij   (Eq. 12)
-    w_ij = (N_Base_ij + N_WFFC_ij) / N                                          (Eq. 13)
+    dAEP = Σ_ij w_ij ( Pbar_WFFC_ij − Pbar_Base_ij ) / Σ_ij w_ij Pbar_Base_ij
+    w_ij = (N_Base_ij + N_WFFC_ij) / N
 
 2-D binning by wind direction (i) and wind speed (j). Reported in percent.
 
@@ -11,8 +12,12 @@ Validation-design fixes (adversarial review C1 + M3):
     estimate and its own clean truth are always evaluated on IDENTICAL bins,
     samples and weights — eliminating the estimand drift caused by the
     min-count bin mask growing with campaign length.
-  * one shared, vectorised block bootstrap with n_boot=1000 (percentile CI),
-    implemented via multinomial block counts + matmul so B=1000 is cheap.
+  * one shared, vectorised block bootstrap with n_boot=1000, implemented via
+    multinomial block counts + matmul so B=1000 is cheap. It returns the
+    SYMMETRIC half-width (hi-lo)/2 of the percentile interval — reported
+    intervals are therefore est +- hw, centred on the point estimate, not the
+    raw [lo, hi] percentiles (they coincide in the calibrated regime; see the
+    0.5-yr small-sample note in the README).
 """
 import numpy as np
 
@@ -48,7 +53,7 @@ def daep_from_sums(sW, nW, sB, nB, valid):
 
 
 def delta_aep(p, on, wd=None, ws=None, bid=None, valid=None):
-    """IEA Eq. 12 change in energy [%]. Pass `valid` to pin the bin mask."""
+    """IEA Task 44 change-in-energy metric [%]. Pass `valid` to pin the bin mask."""
     if bid is None:
         bid = bin_index(wd, ws)
     sW, nW, sB, nB = bin_sums(p, on, bid)
@@ -85,11 +90,12 @@ def deterministic_truth(pon, poff, bid, fixed):
 
 
 def block_boot_halfwidth(p, on, bid, block_ids, n_boot=1000, rng=None, fixed=None):
-    """Vectorised block bootstrap 95% half-width of dAEP.
+    """Vectorised block bootstrap 95% SYMMETRIC half-width (hi-lo)/2 of dAEP.
 
     Precomputes per-block per-bin sums, then draws multinomial block counts
     (equivalent to resampling nbk blocks with replacement) and aggregates via
-    matmul — so n_boot=1000 costs a few matrix products.
+    matmul — so n_boot=1000 costs a few matrix products. Returns a half-width,
+    not the asymmetric [lo, hi] percentiles; callers report est +- hw.
     """
     ub, inv = np.unique(block_ids, return_inverse=True)
     nbk = len(ub)

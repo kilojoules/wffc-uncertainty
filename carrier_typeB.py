@@ -3,8 +3,8 @@ WHERE the systematic enters matters (review M2).
 
 Three carriers for the same nominal 0.5% systematic, all end-to-end:
 
-  1. ON-only power gain      — differential; Eq. 12 cannot cancel it.
-  2. common-mode power gain  — same sensor error on both states; Eq. 12 is
+  1. ON-only power gain      — differential; the metric cannot cancel it.
+  2. common-mode power gain  — same sensor error on both states; the metric is
                                exactly invariant (the toggle design's strength).
   3. ON-period wind-speed bias (the *physical* carrier of a yaw-dependent
      transfer-function error): the measured ws used for BINNING is biased
@@ -30,12 +30,18 @@ modes = [("on_only", "ON-only power gain", "#d62728"),
          ("common", "common-mode power gain", "#2ca02c"),
          ("ws_carrier", "ON-period wind-speed bias", "#1f77b4")]
 
-print(f"Net dAEP bias, {L}-yr campaigns, sigma={SIG*100:.1f}% on each carrier:")
+# Common random numbers across carriers (review nit [5]): the SAME seed (hence the
+# same weather block-resample, the same per-campaign b, and the same Type-A noise
+# draw) is used for all three modes at each replicate r, so the Type-A component is
+# shared and largely cancels in the mode-to-mode difference. This sharpens the
+# systematic-contribution estimate sqrt(std_mode^2 - std_common^2) below, which
+# would otherwise carry ~3.5% MC noise from independent Type-A draws per mode.
+print(f"Net dAEP bias, {L}-yr campaigns, sigma={SIG*100:.1f}% on each carrier (common random numbers):")
 net = {}
 for ai, (mode, lab, _) in enumerate(modes):
     errs = np.empty(R)
     for r in range(R):
-        rng = C.rng_for(EXP_ID, ai, r)
+        rng = C.rng_for(EXP_ID, 0, r)                 # same r-seed for every mode -> CRN
         idx, blocks, on = C.make_campaign(L, rng)
         pc, po, bid, b = C.observe(idx, on, rng, sigma_b=SIG, mode=mode)
         est_clean, est_obs, _ = M.campaign_estimates(pc, po, on, bid, fixed=C.FIXED_MASK)

@@ -73,8 +73,8 @@ for r in range(R):
     if est - hb > 0 and est - hh <= 0:
         print(f"\nExemplar (4 yr, sigma_B=0.25%, true benefit = 0):")
         print(f"  measured ΔAEP = {est:+.2f}%")
-        print(f"  bootstrap 95% CI [{est-hb:+.2f}, {est+hb:+.2f}] % -> benefit declared, deploy")
-        print(f"  honest    95% CI [{est-hh:+.2f}, {est+hh:+.2f}] % -> not significant")
+        print(f"  bootstrap 95% CI (est+-hw) [{est-hb:+.2f}, {est+hb:+.2f}] % -> benefit declared, deploy")
+        print(f"  honest    95% CI (est+-hw) [{est-hh:+.2f}, {est+hh:+.2f}] % -> not significant")
         break
 
 # ---- figure -----------------------------------------------------------------
