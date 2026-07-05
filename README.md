@@ -37,8 +37,10 @@ is standard GUM/Kanev propagation, not a new estimator. The contribution here is
 not "Type B exists" or a novel phenomenon; it is the **WFFC-specific
 quantification of how the omission scales with campaign length at the go/no-go
 decision level, a comparison of which physical carriers actually survive the
-toggle design (Result 1), and the sensitivity coefficients needed to repair
-each.**
+toggle design (Result 1), the sensitivity coefficients needed to repair each,
+and the mean *and worst-case* reliability of each technique across a believable
+scenario ensemble for the sub-2-year campaigns that dominate the field
+(Result 4).**
 
 ## Read this first: the metric, the errors, and the truth
 
@@ -202,6 +204,86 @@ reported as excess over the control, and why even the correctly-repaired ws arm
 reads 89 % at 0.5 yr. The placebo experiment, whose truth is exact, is
 calibrated at all lengths.
 
+## Result 4 — across a believable ensemble, in the < 2-year field regime (`ensemble.py`)
+
+Results 1–3 each fix one scenario; a real analyst does not know theirs, and the
+typical toggle campaign runs **under two years**. So the decision-relevant
+question is: over an ensemble of believable field campaigns — and in the *worst*
+believable case — how well does each technique do? We draw **100 independent
+scenarios** and, at the lengths that actually occur (0.5–2 yr), compare three
+techniques *given the true σ_B* (so only the technique differs, not the prior —
+σ_B misspecification is Result 3's job):
+
+- true benefit from the wake coefficient k ~ U(0.025, 0.045) → ΔAEP ≈ +2…+12 %,
+  with **25 % placebo** scenarios (no real benefit, true ΔAEP = 0);
+- systematic σ_B ~ U(0, 0.5 %) (0 = well-calibrated; 0.5 % ≈ the believable
+  upper end of a differential calibration error);
+- carrier ~ {ON-only power 40 %, ws/yaw-transfer 40 %, common-mode 20 %};
+- scatter σ_A ~ U(1.5, 3.5 %).
+
+The techniques: **bootstrap only** (current practice); **honest one-size** (add
+z·(100+ΔAEP)·σ_B to *every* campaign — the naive reading of "report a Type-B
+term"); and **honest carrier-aware** (use the *actual* carrier's sensitivity —
+100+ΔAEP for ON-only power, the propagated bin-migration sensitivity for ws, ~0
+for common-mode). Carrier-aware assumes you have identified your dominant
+systematic's *channel* (which sensor, applied to which state) and propagated it —
+the everyday work of a measurement-uncertainty budget, not oracle knowledge of
+its size.
+
+![ensemble](fig_ensemble.png)
+
+**Coverage of the true benefit (target 95 %), campaigns < 2 yr:**
+
+| technique | mean | near-worst (5th pct) | worst case |
+|---|---|---|---|
+| bootstrap only (current practice) | 85 % | 57 % | **40 %** |
+| honest, one-size (100+ΔAEP) term | 90 % | 74 % | 64 % |
+| honest, carrier-aware (recommended) | 93 % | 84 % | 72 % |
+
+**False "benefit declared" on the placebo scenarios (target ≤ 2.5 %):**
+
+| technique | mean | worst case |
+|---|---|---|
+| bootstrap only | 6.3 % | **35 %** |
+| honest, one-size | 4.0 % | 18.8 % |
+| honest, carrier-aware | 2.4 % | 7.5 % |
+
+Three things the ensemble makes plain:
+
+1. **Current practice is not just imperfect on average, it is unreliable in the
+   tail — and gets worse with data.** Bootstrap-only averages 85 % coverage and a
+   6 % false-deploy rate, but its *worst* believable scenario is 40 % coverage /
+   35 % false-deploy, and (right panel) its worst case *degrades* with length: a
+   2-year campaign is more likely to deploy a nonexistent benefit than a half-year
+   one.
+2. **A one-size Type-B term helps the average but not the worst case.** It sizes
+   the ON-only carrier correctly and over-covers common-mode, so the mean looks
+   healthy — but it still under-sizes the ws/yaw carrier, so the tail stays bad
+   (64 % coverage / 19 % false-deploy).
+3. **The carrier-aware interval is the only one whose worst case is bounded by
+   something other than Type B.** Its floor is the block bootstrap's own
+   small-sample undercoverage at 0.5 yr (~72 %); by 1–2 yr — the heart of the
+   field regime — its worst case is 82–88 % and its false-deploy rate holds at the
+   nominal 2–3 %. Unlike the bootstrap, it *improves* with data.
+
+Two honest scope notes. *(a)* The ws carrier-aware sensitivity is computed once
+per scenario from the *clean* powers (a noise-free finite difference through the
+metric, ~180–240 across scenarios) rather than re-estimated per campaign; it is a
+robust physical quantity, not knowledge of the realized bias, but it is a mild
+idealization in aware's favour. *(b)* "One-size" here means the *smaller* ON-only
+coefficient (~107) applied everywhere — faithful to the naive reading of this
+repo's own recommendation, and the specific error being warned against. A
+*conservative* one-size that used the largest sensitivity (~221) for every
+campaign would also bound worst-case coverage — but by over-widening on the
+ON-only and common-mode majority, i.e. trading away power to detect real
+benefits. Carrier-aware's edge is *right-sizing* (not over-widening), which the
+mean/power side of the table would show more directly than coverage alone.
+
+(100 scenarios × 80 campaigns × 3 lengths, shared B = 400 bootstrap. Every
+distributional choice above is disclosed and tunable at the top of `ensemble.py`;
+the single-scenario "worst case" is a Monte-Carlo estimate, so read the 5th-pct
+column as the robust near-worst.)
+
 ## The visual story (`story.py`)
 
 Raw toggle data → binning → the two uncertainties → the conclusion, in one
@@ -255,7 +337,8 @@ consistent scenario (fixed k, realistic controller, σ_B = 0.5 % ON-only):
 pip install py_wake numpy scipy matplotlib      # tested with py_wake 2.6.7
 python carrier_typeB.py        # which systematics matter (common-mode cancels)
 python mild_typeB_decision.py  # false 'benefit declared' rate vs campaign length
-python typeB_levels.py         # coverage, excess-over-control, misspecification
+python typeB_levels.py         # coverage, excess-over-control, misspecification, ws repair
+python ensemble.py             # mean & worst-case per technique over believable scenarios
 python story.py                # the 4-figure walkthrough
 python absolute_view.py        # un-normalized (kW) per-wind-speed view
 ```

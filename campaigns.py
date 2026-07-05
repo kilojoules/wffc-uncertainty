@@ -75,7 +75,7 @@ def make_campaign(L_years, rng):
 
 
 def observe(idx, on, rng, sigma_b=0.0, mode="on_only", placebo=False,
-            ws_bias_frac=0.0, sig_a=SIG_A):
+            ws_bias_frac=0.0, sig_a=SIG_A, pon_src=None, poff_src=None):
     """Simulate what the analyst records. END-TO-END error injection.
 
     Returns (p_clean, p_obs, bid, b) where bid is the (wd,ws) bin index built
@@ -86,9 +86,15 @@ def observe(idx, on, rng, sigma_b=0.0, mode="on_only", placebo=False,
       mode='ws_carrier'  : ON-period measured ws x (1+b) (bin-migration carrier)
       placebo=True       : controller does nothing (ON physics = OFF physics),
                            so the true dAEP is exactly 0 by construction.
+      pon_src/poff_src   : optional clean-power vectors (over all N_S sector
+                           samples) to use INSTEAD of the module PON/POFF — lets
+                           an ensemble vary the wake coefficient k (hence the
+                           true benefit) per scenario. Default = the fixed-k pair.
     """
-    pon = (POFF if placebo else PON)[idx]
-    poff = POFF[idx]
+    PON_ = PON if pon_src is None else pon_src
+    POFF_ = POFF if poff_src is None else poff_src
+    pon = (POFF_ if placebo else PON_)[idx]
+    poff = POFF_[idx]
     p_clean = np.where(on, pon, poff)
     b = rng.normal(0.0, sigma_b) if sigma_b > 0 else 0.0
 
