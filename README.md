@@ -211,44 +211,64 @@ typical toggle campaign runs **under two years**. So the decision-relevant
 question is: over an ensemble of believable field campaigns — and in the *worst*
 believable case — how well does each technique do? We draw **100 independent
 scenarios** and, at the lengths that actually occur (0.5–2 yr), compare three
-techniques *given the true σ_B* (so only the technique differs, not the prior —
-σ_B misspecification is Result 3's job):
+techniques — plus a misattribution stress arm — *given the true σ_B* (so only
+the technique differs, not the prior — σ_B misspecification is Result 3's job):
 
 - true benefit from the wake coefficient k ~ U(0.025, 0.045) → ΔAEP ≈ +2…+12 %,
   with **25 % placebo** scenarios (no real benefit, true ΔAEP = 0);
-- systematic σ_B ~ U(0, 0.5 %) (0 = well-calibrated; 0.5 % ≈ the believable
-  upper end of a differential calibration error);
+- systematic σ_B ~ U(0, 0.5 %) (0 = well-calibrated; 0.5 % ≈ a believable upper
+  end for the *post-calibration residual* of a differential error. Raw
+  uncorrected yaw-dependent nacelle-anemometer biases are multi-percent, so
+  this band assumes a yawed transfer-function correction has been applied —
+  "worst case" below means worst *within this prior band*. A wider band makes
+  bootstrap-only strictly worse and leaves carrier-aware calibrated, so the
+  ranking is insensitive to the upper end);
 - carrier ~ {ON-only power 40 %, ws/yaw-transfer 40 %, common-mode 20 %};
 - scatter σ_A ~ U(1.5, 3.5 %).
 
 The techniques: **bootstrap only** (current practice); **honest one-size** (add
 z·(100+ΔAEP)·σ_B to *every* campaign — the naive reading of "report a Type-B
-term"); and **honest carrier-aware** (use the *actual* carrier's sensitivity —
+term"); **honest carrier-aware** (use the *actual* carrier's sensitivity —
 100+ΔAEP for ON-only power, the propagated bin-migration sensitivity for ws, ~0
-for common-mode). Carrier-aware assumes you have identified your dominant
-systematic's *channel* (which sensor, applied to which state) and propagated it —
-the everyday work of a measurement-uncertainty budget, not oracle knowledge of
-its size.
+for common-mode); and a **misattribution stress arm** — carrier-aware after the
+single most dangerous identification error, a differential ws systematic
+misread as *common-mode* (S = 0). The stress arm is there because carrier-aware's
+recommendation is **conditional on correctly identifying the carrier**:
+mis-*sizing* σ_B degrades gracefully (Result 3), but calling a differential
+systematic "common-mode" silently reverts the interval to the bare bootstrap.
+Declaring a systematic common-mode is the unsafe direction — when in doubt,
+treat it as differential.
 
 ![ensemble](fig_ensemble.png)
 
-**Coverage of the true benefit (target 95 %), campaigns < 2 yr:**
+**Coverage of the true benefit (target 95 %), campaigns < 2 yr** (mean ± 2·MC-SE,
+scenario-clustered):
 
 | technique | mean | near-worst (5th pct) | worst case |
 |---|---|---|---|
-| bootstrap only (current practice) | 85 % | 57 % | **40 %** |
-| honest, one-size (100+ΔAEP) term | 90 % | 74 % | 64 % |
-| honest, carrier-aware (recommended) | 93 % | 84 % | 72 % |
+| bootstrap only (current practice) | 85 ± 2 % | 57 % | **40 %** |
+| honest, one-size (100+ΔAEP) term | 90 ± 1 % | 74 % | 64 % |
+| honest, carrier-aware (recommended) | 93 ± 1 % | 84 % | 72 % |
+| carrier-aware, *ws misread as common* | 87 ± 2 % | 57 % | 40 % |
 
 **False "benefit declared" on the placebo scenarios (target ≤ 2.5 %):**
 
-| technique | mean | worst case |
+| technique | pooled rate (Wilson 95 %) | worst case |
 |---|---|---|
-| bootstrap only | 6.3 % | **35 %** |
-| honest, one-size | 4.0 % | 18.8 % |
-| honest, carrier-aware | 2.4 % | 7.5 % |
+| bootstrap only | 6.3 % [5.8, 6.9] | **35 %** |
+| honest, one-size | 4.0 % [3.6, 4.5] | 18.8 % |
+| honest, carrier-aware | 2.2 % [1.8, 2.5] | 6.2 % |
+| carrier-aware, *ws misread as common* | 5.6 % [5.1, 6.1] | 35 % |
 
-Three things the ensemble makes plain:
+Read the worst-case column against its *null reference*: a **perfectly
+calibrated** technique still shows a worst cell of 7.5 % (median; 5–95 % range
+6.2–10.0 %), because that column is a max over 93 Binomial(80, 2.5 %) cells.
+Carrier-aware's 6.2 % is *below* the null median — statistically
+indistinguishable from perfect calibration — while one-size (18.8 %) and
+bootstrap (35 %) are impossible under the null (p < 10⁻⁸): the ordering is
+signal, the 6.2 % itself is not a target violation.
+
+Four things the ensemble makes plain:
 
 1. **Current practice is not just imperfect on average, it is unreliable in the
    tail — and gets worse with data.** Bootstrap-only averages 85 % coverage and a
@@ -262,27 +282,48 @@ Three things the ensemble makes plain:
    (64 % coverage / 19 % false-deploy).
 3. **The carrier-aware interval is the only one whose worst case is bounded by
    something other than Type B.** Its floor is the block bootstrap's own
-   small-sample undercoverage at 0.5 yr (~72 %); by 1–2 yr — the heart of the
-   field regime — its worst case is 82–88 % and its false-deploy rate holds at the
-   nominal 2–3 %. Unlike the bootstrap, it *improves* with data.
+   small-sample undercoverage at 0.5 yr (~72 %) — a floor that in a real
+   *contiguous* sub-year campaign would sit lower still for every technique,
+   because of the seasonal-representativeness error the resampling design
+   cannot see (Limitations). By 1–2 yr — the heart of the field regime — its
+   worst case is 82–88 % and its pooled false-deploy rate is 2.2 %
+   [1.8, 2.5], holding the nominal 2.5 %. Unlike the bootstrap, it *improves*
+   with data.
+4. **Carrier identification is the load-bearing input.** The stress arm — a
+   differential ws systematic misread as common-mode — hands back nearly the
+   entire bootstrap pathology: 87 % mean / 40 % worst coverage, 35 % worst
+   false-deploy. Mis-*sizing* σ_B degrades gracefully (Result 3);
+   mis-*identifying* the carrier does not, and the dangerous direction is
+   specifically declaring a differential channel "common-mode" (S = 0, i.e.
+   silently adding nothing).
 
 Two honest scope notes. *(a)* The ws carrier-aware sensitivity is computed once
-per scenario from the *clean* powers (a noise-free finite difference through the
-metric, ~180–240 across scenarios) rather than re-estimated per campaign; it is a
-robust physical quantity, not knowledge of the realized bias, but it is a mild
-idealization in aware's favour. *(b)* "One-size" here means the *smaller* ON-only
+per scenario from the *clean* powers (a noise-free finite difference through
+the metric) rather than re-estimated per campaign — knowledge of the channel,
+not of the realized bias. It is **not** a scale-free physical constant: the
+bin-migration response is a staircase in the bias, and a secant taken below the
+~0.3 % discreteness knee understates the slope by up to ~2×. It is therefore
+evaluated on the plateau, at scale max(2σ_B, 0.3 %), giving **~203–241 across
+scenarios** (median ~223). An earlier draft evaluated the secant at σ_B itself,
+which under-sized the term for small-σ_B ws scenarios — an error *against* the
+aware technique, masked in the tables (≤3 pp) only because the bootstrap width
+dominates the quadrature at < 2 yr. *(b)* "One-size" here means the *smaller* ON-only
 coefficient (~107) applied everywhere — faithful to the naive reading of this
 repo's own recommendation, and the specific error being warned against. A
-*conservative* one-size that used the largest sensitivity (~221) for every
+*conservative* one-size that used the largest sensitivity (~240) for every
 campaign would also bound worst-case coverage — but by over-widening on the
 ON-only and common-mode majority, i.e. trading away power to detect real
 benefits. Carrier-aware's edge is *right-sizing* (not over-widening), which the
 mean/power side of the table would show more directly than coverage alone.
 
-(100 scenarios × 80 campaigns × 3 lengths, shared B = 400 bootstrap. Every
-distributional choice above is disclosed and tunable at the top of `ensemble.py`;
-the single-scenario "worst case" is a Monte-Carlo estimate, so read the 5th-pct
-column as the robust near-worst.)
+(100 scenarios × 80 campaigns × 3 lengths, shared B = 400 bootstrap — the
+smallest MC budget in the repo, hence the explicit uncertainty statements:
+per-cell granularity is 100/80 = 1.25 pp, and the single-scenario "worst case"
+is a min/max over 300 (93 placebo) binomial cells, biased outward by noise
+alone by several pp. Read the 5th-pct column (coverage) and the pooled Wilson
+rate (placebo) as the robust tail statistics; the worst-case column is there
+for the mechanism, not the digit. Every distributional choice above is
+disclosed and tunable at the top of `ensemble.py`.)
 
 ## The visual story (`story.py`)
 
@@ -307,7 +348,10 @@ consistent scenario (fixed k, realistic controller, σ_B = 0.5 % ON-only):
    a one-size coefficient:** for an ON-only power gain it is dΔAEP/db = 100 +
    ΔAEP; for a yaw-dependent wind-speed/transfer-function bias it is ~2× larger
    and has no closed form — estimate it by pushing a unit bias through the
-   metric pipeline (`ws_carrier_sensitivity` in `typeB_levels.py`). Result 3
+   metric pipeline (`ws_carrier_sensitivity` in `typeB_levels.py`). The
+   bin-migration response is a *staircase* in the bias, so evaluate the finite
+   difference on its plateau — at a scale of max(2σ_B, ~0.3 %) — never at a
+   tiny scale, where the secant understates the slope by up to ~2×. Result 3
    shows the naive ON-only term leaves the ws carrier under-covered (65 % at
    8 yr); its own sensitivity restores it (94 %).
 3. Or, equivalently: invest in calibrating the differential channels away —
@@ -318,9 +362,15 @@ consistent scenario (fixed k, realistic controller, σ_B = 0.5 % ON-only):
 
 - **One base year, block-resampled.** No interannual variability; the weather
   process satisfies the bootstrap's exchangeability assumptions by
-  construction. Quantitative length-scalings are conditional on this; the
-  qualitative mechanism (Type A shrinks, a constant systematic does not) is
-  not.
+  construction. Sub-year simulated campaigns are additionally
+  *season-scrambled*: uniform block draws give every 0.5-yr campaign full-year
+  climatology (and a 2-yr campaign reuses the same year twice), so a real
+  *contiguous* 6–12-month campaign carries a seasonal representativeness error
+  (order ±1–3.5 pp in ΔAEP over this site's k range) that none of the
+  techniques — bootstrap or honest — can see. Field sub-year coverage is
+  therefore lower than simulated for *all* of them. Quantitative
+  length-scalings are conditional on this; the qualitative mechanism (Type A
+  shrinks, a constant systematic does not) is not.
 - **b is constant for the whole campaign.** A systematic with a ~1-yr
   correlation time would partially average down; the monotone growth assumes
   the error persists (e.g., an uncorrected transfer function, which does).
