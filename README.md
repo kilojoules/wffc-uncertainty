@@ -1,5 +1,13 @@
 # The cost of omitting Type B in WFFC field validation
 
+**TL;DR — For sub-2-year toggle campaigns, the standard bootstrap CI is
+unreliable exactly where it matters — 40 % worst-case coverage and up to 35 %
+odds of deploying a nonexistent benefit, *worsening* with more data — while
+adding a Type-B term sized to the actual physical carrier of the systematic
+restores near-nominal coverage and false-deploy rates at essentially no cost,
+provided you identify the carrier correctly (misattributing it silently hands
+the pathology back).**
+
 A self-contained [PyWake](https://gitlab.windenergy.dtu.dk/TOPFARM/PyWake)
 experiment quantifying a specific, decision-level failure mode in
 wind-farm-flow-control (WFFC) field assessment:
