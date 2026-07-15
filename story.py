@@ -130,9 +130,9 @@ fig, ax = plt.subplots(figsize=(8.6, 5.6))
 cov0 = 100 * (np.abs(errs) <= hws).mean(axis=1)
 covB = 100 * (np.abs(errsB) <= hws).mean(axis=1)          # bootstrap-only, with systematic
 covH = 100 * (np.abs(errsB) <= np.hypot(hws, hwB)).mean(axis=1)
-for cov, col, lab, mk in [(cov0, OK_C, "bootstrap, no Type B  [control]", "o-"),
-                          (covB, B_C, f"bootstrap, $\\sigma_B$={SIG_B*100:.1f}% ON-only", "o-"),
-                          (covH, "k", f"honest (⊕ Type B), $\\sigma_B$={SIG_B*100:.1f}%", "s--")]:
+for cov, col, lab, mk in [(cov0, OK_C, "bootstrap, no systematic present  [control]", "o-"),
+                          (covB, B_C, f"bootstrap only, systematic present ($\\sigma_B$={SIG_B*100:.1f}% ON-only)", "o-"),
+                          (covH, "k", f"honest (⊕ Type B), same systematic", "s--")]:
     k = np.round(cov * R / 100).astype(int)
     lo = np.array([M.wilson(kk, R)[0] for kk in k]); hi = np.array([M.wilson(kk, R)[1] for kk in k])
     ax.plot(x, cov, mk, color=col, label=lab)
@@ -143,7 +143,7 @@ ax.set_ylim(30, 102); ax.set_xlabel("campaign length")
 ax.set_ylabel("coverage of the true ΔAEP [%]")
 ax.set_title("4 · More measurement → more false confidence\n"
              "with a differential systematic, bootstrap coverage falls as data grow;\n"
-             "the control (no Type B) confirms the bootstrap itself is calibrated",
+             "the control (no systematic present) confirms the bootstrap itself is calibrated",
              fontsize=10.5, loc="left")
 ax.legend(fontsize=8.5, loc="lower left"); ax.grid(alpha=0.3)
 plt.tight_layout(); plt.savefig("story_4_conclusion.png", dpi=130); plt.close()
